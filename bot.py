@@ -1,4 +1,3 @@
-# bot.py
 import nest_asyncio
 nest_asyncio.apply()
 
@@ -12,15 +11,16 @@ from flask import Flask
 from threading import Thread
 import sys
 
-# Force logs to show immediately
-sys.stdout.reconfigure(line_buffering=True)
+# --- YOUR KEYS (HARDCODED) ---
+TELEGRAM_TOKEN = "8508179051:AAH_hYMkwjT6g-csu6dnEdZuExSZGZ9T0SY"
+GEMINI_KEY = "AIzaSyCtFBsHCffIhCxlyVqLfHXhVBdERQHe-dY"
 
-# --- RENDER KEEP-ALIVE ---
+# --- WEB SERVER FOR RENDER ---
 app = Flask('')
 
 @app.route('/')
 def home():
-    return "Bot is alive!"
+    return "Bot is online with hardcoded keys!"
 
 def run():
     port = int(os.environ.get("PORT", 8080))
@@ -30,68 +30,70 @@ def keep_alive():
     t = Thread(target=run)
     t.start()
 
-# --- CONFIG ---
-TELEGRAM_TOKEN = os.environ.get("TELEGRAM_TOKEN")
-GEMINI_KEY = os.environ.get("GEMINI_KEY")
-
-if not TELEGRAM_TOKEN or not GEMINI_KEY:
-    print("❌ ERROR: API Keys are missing in Render Environment Variables!")
-        
-genai.configure(api_key=GEMINI_KEY)
-model = genai.GenerativeModel('gemini-1.5-flash')
+# --- BOT SETUP ---
+# Configure Gemini
+try:
+    genai.configure(api_key=GEMINI_KEY)
+    # Using 'gemini-pro' because it is the most compatible model
+    model = genai.GenerativeModel('gemini-pro')
+except Exception as e:
+    print(f"Gemini Config Error: {e}")
 
 PROMPT = """
 Tumi ekjon serious Bangladeshi customer support staff.
-Translate input to Bangla (English letters). No emojis.
+Boss jo kichhu Hindi ba English e bolbe seta ke tumi shudhu Bangla te (English letter e) translate korbe.
+Kono emoji ba extra kotha bolbe na. Sirf clear polite Bangla likhbe.
 """
 
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    await update.message.reply_text("✓ Bot is Online!")
-    print(f"✓ /start command received from {update.effective_user.first_name}")
+    await update.message.reply_text("✓ Bot is Ready (Hardcoded Keys)")
 
 async def handle(update: Update, context: ContextTypes.DEFAULT_TYPE):
     text = update.message.text
-    print(f"📩 Message received: {text}") # Debug Message
-        
+    print(f"📩 Received: {text}")
+    
     try:
+        # Generate response
         response = model.generate_content(PROMPT + "\n\nInput: " + text)
+        # Clean text
         bangla = response.text.strip().replace('*', '')
+        
+        # Send to Telegram
         await update.message.reply_text(bangla)
-        print("✓ Reply sent successfully")
+        print("✓ Sent reply")
     except Exception as e:
-        print(f"❌ Error generating/sending: {e}")
-        await update.message.reply_text("⚠️ Error: Please try again.")
+        print(f"❌ Error: {e}")
+        await update.message.reply_text("⚠️ Error processing request. Keys might be invalid.")
 
 async def main():
-    print("="*30)
-    print("🤖 INITIALIZING BOT...")
-    print("="*30)
-
+    print("🤖 Bot Starting...")
+    
+    # Network settings
     request = HTTPXRequest(connection_pool_size=1, connect_timeout=60, read_timeout=60)
+    
+    try:
+        app_bot = Application.builder().token(TELEGRAM_TOKEN).request(request).build()
         
-    app_bot = Application.builder().token(TELEGRAM_TOKEN).request(request).build()
+        app_bot.add_handler(CommandHandler("start", start))
+        app_bot.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle))
         
-    # --- CONNECTION CHECK ---
-    print("📡 Connecting to Telegram...")
-    await app_bot.initialize()
-    bot_identity = await app_bot.bot.get_me()
-    print(f"✅ LOGGED IN SUCCESSFULLY AS: @{bot_identity.username}")
-    print("="*30)
+        print("📡 Connecting to Telegram...")
+        await app_bot.initialize()
+        await app_bot.start()
         
-    app_bot.add_handler(CommandHandler("start", start))
-    app_bot.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle))
+        # drop_pending_updates=True fixes the conflict error slightly
+        await app_bot.updater.start_polling(drop_pending_updates=True)
+        print("✅ Polling Started!")
         
-    await app_bot.start()
-    await app_bot.updater.start_polling(drop_pending_updates=True)
-    print("👂 Listening for messages...")
-        
-    await asyncio.Event().wait()
+        await asyncio.Event().wait()
+    except Exception as e:
+        print(f"❌ CRITICAL ERROR: {e}")
 
 if __name__ == "__main__":
-    keep_alive()
+    keep_alive() # Start Render Server
     try:
-        asyncio.run(main())
+        asyncio.run(main()) # Start Bot
     except KeyboardInterrupt:
         pass
-    except Exception as e:
-        print(f"❌ FATAL ERROR: {e}")
+
+
