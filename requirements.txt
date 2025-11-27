@@ -1,0 +1,5 @@
+python-telegram-bot
+google-generativeai
+nest_asyncio
+flask
+gunicorn
