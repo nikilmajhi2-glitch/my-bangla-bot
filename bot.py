@@ -35,7 +35,7 @@ def keep_alive():
 try:
     genai.configure(api_key=GEMINI_KEY)
     # Using 'gemini-pro' because it is the most compatible model
-    model = genai.GenerativeModel('gemini-pro')
+    model = genai.GenerativeModel('gemini-2.5-flash')
 except Exception as e:
     print(f"Gemini Config Error: {e}")
 
