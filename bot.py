@@ -1,3 +1,4 @@
+# bot.py
 import nest_asyncio
 nest_asyncio.apply()
 
@@ -9,13 +10,17 @@ import asyncio
 import os
 from flask import Flask
 from threading import Thread
+import sys
 
-# --- RENDER KEEP-ALIVE SECTION ---
+# Force logs to show immediately
+sys.stdout.reconfigure(line_buffering=True)
+
+# --- RENDER KEEP-ALIVE ---
 app = Flask('')
 
 @app.route('/')
 def home():
-    return "Bot is alive and running!"
+    return "Bot is alive!"
 
 def run():
     port = int(os.environ.get("PORT", 8080))
@@ -24,73 +29,69 @@ def run():
 def keep_alive():
     t = Thread(target=run)
     t.start()
-# ---------------------------------
 
-# GET KEYS FROM ENVIRONMENT VARIABLES (SECURE)
+# --- CONFIG ---
 TELEGRAM_TOKEN = os.environ.get("TELEGRAM_TOKEN")
 GEMINI_KEY = os.environ.get("GEMINI_KEY")
 
-# Configure Gemini
+if not TELEGRAM_TOKEN or not GEMINI_KEY:
+    print("❌ ERROR: API Keys are missing in Render Environment Variables!")
+        
 genai.configure(api_key=GEMINI_KEY)
 model = genai.GenerativeModel('gemini-1.5-flash')
 
 PROMPT = """
 Tumi ekjon serious Bangladeshi customer support staff.
-Boss jo kichhu Hindi ba English e bolbe seta ke tumi shudhu Bangla te (English letter e) translate korbe.
-Kono emoji ba extra kotha bolbe na. Sirf clear polite Bangla likhbe.
+Translate input to Bangla (English letters). No emojis.
 """
 
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    try:
-        await update.message.reply_text("✓ Bot ready sir. Ab kuch bhi likhen.")
-        print(f"✓ Started by user {update.effective_user.id}")
-    except Exception as e:
-        print(f"✗ Start error: {e}")
+    await update.message.reply_text("✓ Bot is Online!")
+    print(f"✓ /start command received from {update.effective_user.first_name}")
 
 async def handle(update: Update, context: ContextTypes.DEFAULT_TYPE):
     text = update.message.text
+    print(f"📩 Message received: {text}") # Debug Message
         
     try:
-        print(f"🤖 Generating...")
-        response = model.generate_content(PROMPT + "\n\nBoss bolchen: " + text)
-        bangla = response.text.strip()
-        bangla = bangla.replace('**', '').replace('*', '')
-            
-        # Retry logic for sending
-        max_retries = 5
-        for attempt in range(max_retries):
-            try:
-                await update.message.reply_text(bangla)
-                break
-            except Exception:
-                if attempt < max_retries - 1:
-                    await asyncio.sleep(2)
-            
+        response = model.generate_content(PROMPT + "\n\nInput: " + text)
+        bangla = response.text.strip().replace('*', '')
+        await update.message.reply_text(bangla)
+        print("✓ Reply sent successfully")
     except Exception as e:
-        print(f"✗ Error: {e}")
+        print(f"❌ Error generating/sending: {e}")
+        await update.message.reply_text("⚠️ Error: Please try again.")
 
 async def main():
-    print("🤖 Bot Starting...")
-        
-    # Connection settings for stability
+    print("="*30)
+    print("🤖 INITIALIZING BOT...")
+    print("="*30)
+
     request = HTTPXRequest(connection_pool_size=1, connect_timeout=60, read_timeout=60)
         
-    app_bot = Application.builder() \
-        .token(TELEGRAM_TOKEN) \
-        .request(request) \
-        .build()
+    app_bot = Application.builder().token(TELEGRAM_TOKEN).request(request).build()
+        
+    # --- CONNECTION CHECK ---
+    print("📡 Connecting to Telegram...")
+    await app_bot.initialize()
+    bot_identity = await app_bot.bot.get_me()
+    print(f"✅ LOGGED IN SUCCESSFULLY AS: @{bot_identity.username}")
+    print("="*30)
         
     app_bot.add_handler(CommandHandler("start", start))
     app_bot.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle))
         
-    await app_bot.initialize()
     await app_bot.start()
     await app_bot.updater.start_polling(drop_pending_updates=True)
+    print("👂 Listening for messages...")
+        
     await asyncio.Event().wait()
 
 if __name__ == "__main__":
-    keep_alive() # Starts the web server for Render
+    keep_alive()
     try:
-        asyncio.run(main()) # Starts the bot
+        asyncio.run(main())
     except KeyboardInterrupt:
         pass
+    except Exception as e:
+        print(f"❌ FATAL ERROR: {e}")
